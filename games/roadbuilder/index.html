@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Road Builder | ZynPlay</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: linear-gradient(to bottom, #6ec6ff, #2196f3);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      font-family: "Poppins", sans-serif;
+      color: white;
+      text-align: center;
+    }
+    canvas {
+      background: #87ceeb;
+      border: 3px solid #fff;
+      border-radius: 12px;
+    }
+    #playAgain {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      background: #ff5252;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: 0.3s;
+      display: none;
+    }
+    #playAgain:hover {
+      background: #ff1744;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+  <button id="playAgain">Play Again</button>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    let car = { x: 100, y: 250, width: 50, height: 25 };
+    let road = [];
+    let isPlaying = true;
+    let distance = 0;
+    let speed = 2;
+    let gameOver = false;
+
+    const playBtn = document.getElementById("playAgain");
+
+    function drawCar() {
+      ctx.fillStyle = "#ff0000";
+      ctx.fillRect(car.x, car.y, car.width, car.height);
+
+      // Wheels
+      ctx.fillStyle = "#333";
+      ctx.fillRect(car.x + 5, car.y + car.height, 10, 5);
+      ctx.fillRect(car.x + 35, car.y + car.height, 10, 5);
+    }
+
+    function drawRoad() {
+      ctx.fillStyle = "#555";
+      road.forEach((segment) => {
+        ctx.fillRect(segment.x, segment.y, segment.width, segment.height);
+      });
+    }
+
+    function update() {
+      if (!isPlaying) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      drawRoad();
+      drawCar();
+
+      car.x += speed;
+      distance += speed;
+
+      if (!road.some((r) => r.x < car.x + car.width && r.x + r.width > car.x)) {
+        endGame();
+      }
+
+      road.forEach((r) => (r.x -= speed));
+      road = road.filter((r) => r.x + r.width > 0);
+
+      ctx.fillStyle = "white";
+      ctx.font = "18px Poppins";
+      ctx.fillText("Distance: " + Math.floor(distance / 10), 20, 30);
+
+      requestAnimationFrame(update);
+    }
+
+    function endGame() {
+      isPlaying = false;
+      gameOver = true;
+      playBtn.style.display = "block";
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "white";
+      ctx.font = "30px Poppins";
+      ctx.fillText("Game Over!", canvas.width / 2 - 80, canvas.height / 2);
+    }
+
+    function addRoad() {
+      if (!gameOver) {
+        const lastX = road.length ? road[road.length - 1].x + road[road.length - 1].width : car.x;
+        road.push({ x: lastX + 20, y: car.y + car.height, width: 50, height: 10 });
+      }
+    }
+
+    canvas.addEventListener("click", addRoad);
+    canvas.addEventListener("touchstart", addRoad);
+
+    playBtn.addEventListener("click", () => {
+      car = { x: 100, y: 250, width: 50, height: 25 };
+      road = [];
+      isPlaying = true;
+      gameOver = false;
+      distance = 0;
+      playBtn.style.display = "none";
+      update();
+    });
+
+    update();
+  </script>
+</body>
+</html>
