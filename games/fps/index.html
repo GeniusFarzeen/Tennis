@@ -50,7 +50,7 @@
         <input id="liPass" class="input" placeholder="Password" type="password" />
         <button id="doLogin" class="btn">Login</button>
         <button id="doGuest" class="btn ghost">Play as Guest</button>
-        <div class="small">Tip: Test OP: Username <strong>Zynth</strong> Password <strong>GamerZynth</strong></div>
+        <div class="small">Accounts are saved locally in your browser (demo)</div>
       </div>
 
       <div id="signBox" style="display:none">
@@ -59,7 +59,7 @@
         <div style="margin-top:8px">Pick a starting gun:</div>
         <div class="gun-list" id="signGuns"></div>
         <button id="doSign" class="btn">Create Account</button>
-        <div class="small">Usernames must be unique. Accounts saved locally (demo).</div>
+        <div class="small">Usernames must be unique. Saved locally (demo).</div>
       </div>
     </div>
   </div>
@@ -85,7 +85,7 @@
 const USERS_KEY = 'zynplay_fps_users_v1';
 let users = JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
 
-// Pre-create Zynth OP account
+// Pre-create Zynth OP account if not present (kept local only)
 if(!users['Zynth']){
   users['Zynth'] = {
     password: 'GamerZynth',
@@ -104,11 +104,11 @@ const loginBox = document.getElementById('loginBox');
 const signBox = document.getElementById('signBox');
 const liUser = document.getElementById('liUser');
 const liPass = document.getElementById('liPass');
-const doLogin = document.getElementById('doLogin');
-const doGuest = document.getElementById('doGuest');
+const doLoginBtn = document.getElementById('doLogin');
+const doGuestBtn = document.getElementById('doGuest');
 const suUser = document.getElementById('suUser');
 const suPass = document.getElementById('suPass');
-const doSign = document.getElementById('doSign');
+const doSignBtn = document.getElementById('doSign');
 const signGuns = document.getElementById('signGuns');
 const hudUser = document.getElementById('hudUser');
 const hudTeam = document.getElementById('hudTeam');
@@ -145,28 +145,31 @@ Object.values(GUNS).forEach(g=>{
 if(signGuns.firstChild) signGuns.firstChild.click();
 
 // Signup handler
-doSign.onclick = ()=>{
+doSignBtn.onclick = ()=>{
   const u = suUser.value.trim();
   const p = suPass.value;
   const pick = [...signGuns.children].find(c=>c.dataset.g)?.dataset.g || 'pistol';
-  if(!u||!p){ alert('Enter username + password'); return; }
+  if(!u||!p){ alert('Enter username & password'); return; }
   if(users[u]){ alert('Username taken'); return; }
   users[u] = { password:p, team:'Red', gunId:pick, inventory:[pick,'pistol'] };
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  alert('Account created! Login now.');
-  tabLogin.click(); liUser.value = u; liPass.value = p;
+  // auto-login after sign-up
+  CURRENT = { username:u, ...users[u] };
+  startGame();
 };
 
 // Login handler
 let CURRENT = null;
-doLogin.onclick = ()=> {
+doLoginBtn.onclick = ()=> {
   const u = liUser.value.trim(), p = liPass.value;
   if(!u||!p){ alert('Enter credentials'); return; }
-  if(!users[u] || users[u].password !== p){ alert('Wrong username or pass'); return; }
+  if(!users[u] || users[u].password !== p){ alert('Wrong username or password'); return; }
   CURRENT = { username:u, ...users[u] };
   startGame();
 };
-doGuest.onclick = ()=> {
+
+// Guest button
+doGuestBtn.onclick = ()=>{
   CURRENT = { username:'Guest', team:'Red', gunId:'pistol', inventory:['pistol'] };
   startGame();
 };
@@ -275,7 +278,6 @@ function getShotDirection(spread){
   const v = new THREE.Vector3(0,0,-1);
   v.applyQuaternion(camera.quaternion);
   if(spread){
-    // perturb direction
     v.x += (Math.random()-0.5)*spread; v.y += (Math.random()-0.5)*spread;
     v.normalize();
   }
@@ -311,7 +313,6 @@ function updatePlayer(dt){
   if(keys['d']||keys['arrowright']) dir.x += 1;
   dir.normalize();
   // move in camera relative axes
-  const angle = camera.rotation.y;
   const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   forward.y = 0; forward.normalize();
   const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
@@ -320,34 +321,9 @@ function updatePlayer(dt){
   camera.position.add(right.clone().multiplyScalar(dir.x * player.speed * dt));
 }
 
-// UI & overlay controls
-function startGameAfterLogin(){
-  overlay.style.display = 'none';
-  hudUser.innerText = CURRENT.username;
-  hudTeam.innerText = CURRENT.team || 'Red';
-  hudHp.innerText = player.hp;
-  equipGun(CURRENT.gunId || 'pistol');
-}
-
-// login flow handled earlier: doLogin / doSign / doGuest set CURRENT and call startGameAfterLogin()
-
-// attach shooting to mouse
-window.addEventListener('mousedown', (e)=>{
-  if(pointerLocked) shoot();
-});
-// keyboard quick switch guns 1-5
-window.addEventListener('keydown', e=>{
-  if(['1','2','3','4','5'].includes(e.key)){
-    const inv = (CURRENT && CURRENT.inventory) ? CURRENT.inventory : ['pistol'];
-    const idx = parseInt(e.key)-1;
-    if(inv[idx]) equipGun(inv[idx]);
-  }
-});
-
-// simple NPC AI: move forward slowly toward center
+// simple NPC AI: move toward origin area
 function updateNPCs(dt){
   NPCS.forEach(n=>{
-    // move toward origin area
     const v = new THREE.Vector3(0,0,0).sub(n.position).normalize();
     n.position.addScaledVector(v, dt*0.6);
   });
@@ -365,7 +341,6 @@ function loop(now){
 
 // start after CURRENT set
 function startLoop(){
-  // position camera at spawn
   camera.position.set(0,1.7,8);
   controls.getObject().position.copy(camera.position);
   requestAnimationFrame(loop);
@@ -373,8 +348,7 @@ function startLoop(){
 
 /* ---------- Wiring: when CURRENT is set (after login) ---------- */
 function startGame(){
-  // load CURRENT from users or guest
-  if(!CURRENT){ alert('No user'); return; }
+  if(!CURRENT){ alert('No user selected'); return; }
   // ensure CURRENT inventory
   if(!CURRENT.inventory) CURRENT.inventory = [CURRENT.gunId || 'pistol'];
   // set HUD & equip
@@ -390,23 +364,14 @@ function startGame(){
   });
   equipGun(CURRENT.gunId || CURRENT.inventory[0] || 'pistol');
   overlay.style.display = 'none';
-  // pointer lock instructions: click to lock
   renderer.domElement.style.cursor = 'crosshair';
   startLoop();
 }
 
-// logout support (quick)
-window.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ overlay.style.display='flex'; } });
+// expose Escape to reopen overlay (quick logout)
+window.addEventListener('keydown', e=>{ if(e.key === 'Escape') overlay.style.display = 'flex'; });
 
-// quick bindings for login overlay (wired earlier)
-document.getElementById('doLogin').onclick = ()=> doLogin.click();
-document.getElementById('doSign').onclick = ()=> doSign.click();
-document.getElementById('doGuest').onclick = ()=> doGuest.click();
-
-// expose simple login via code for Zynth quick test (autofill)
-liUser.value = 'Zynth'; liPass.value = 'GamerZynth';
-
-// END
+// Done
 </script>
 </body>
 </html>
