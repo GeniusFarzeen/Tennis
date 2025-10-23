@@ -1,90 +1,135 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ZynPlay Arcade</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: 'Poppins', sans-serif;
-      background: linear-gradient(135deg, #101820, #203040);
-      color: #fff;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    header {
-      text-align: center;
-      padding: 40px 20px;
-    }
-    h1 {
-      font-size: 3rem;
-      margin-bottom: 10px;
-      color: #00d8ff;
-    }
-    p {
-      opacity: 0.8;
-    }
-    .games {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 30px;
-      padding: 40px;
-      width: 90%;
-      max-width: 1000px;
-    }
-    .game-card {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 15px;
-      padding: 30px;
-      text-align: center;
-      transition: 0.3s;
-      cursor: pointer;
-    }
-    .game-card:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: translateY(-5px);
-    }
-    .game-card h3 {
-      color: #00d8ff;
-      margin-bottom: 10px;
-    }
-    .game-card a {
-      text-decoration: none;
-      color: white;
-      display: block;
-      margin-top: 10px;
-      font-weight: bold;
-      background: #00d8ff;
-      padding: 10px 15px;
-      border-radius: 8px;
-      transition: 0.3s;
-    }
-    .game-card a:hover {
-      background: #00a5c3;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZynPlay Arcade</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
+
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    font-family: 'Orbitron', sans-serif;
+    background: linear-gradient(135deg,#0d0d2b,#1c1c3a);
+    color:#fff;
+    min-height:100vh;
+  }
+
+  header{
+    text-align:center;
+    padding:50px 20px 30px 20px;
+  }
+  header h1{
+    font-size:3rem;
+    color:#00ffd8;
+    text-shadow: 0 0 15px #00ffd8;
+    margin-bottom:10px;
+  }
+  header p{
+    font-size:1.2rem;
+    color:#cfe8ff;
+    opacity:0.85;
+  }
+
+  main{
+    display:grid;
+    grid-template-columns: repeat(auto-fit,minmax(250px,1fr));
+    gap:30px;
+    padding:40px;
+    max-width:1200px;
+    margin:0 auto;
+  }
+
+  .game-card{
+    background: linear-gradient(145deg,#1f1f40,#2b2b55);
+    border-radius:20px;
+    padding:25px;
+    text-align:center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor:pointer;
+    border:2px solid rgba(0,255,216,0.2);
+    box-shadow:0 10px 20px rgba(0,0,0,0.5);
+  }
+
+  .game-card:hover{
+    transform: translateY(-8px) scale(1.05);
+    box-shadow: 0 15px 30px rgba(0,255,216,0.4);
+  }
+
+  .game-card h3{
+    font-size:1.6rem;
+    color:#00ffd8;
+    margin-bottom:12px;
+    text-shadow: 0 0 10px #00ffd8;
+  }
+
+  .game-card p{
+    color:#cfe8ff;
+    font-size:0.95rem;
+    min-height:45px;
+    margin-bottom:20px;
+  }
+
+  .game-card a{
+    text-decoration:none;
+    display:inline-block;
+    padding:10px 20px;
+    border-radius:12px;
+    font-weight:700;
+    background: linear-gradient(135deg,#00ffd8,#00bfff);
+    color:#0d0d2b;
+    transition: 0.3s;
+    box-shadow:0 5px 15px rgba(0,255,216,0.3);
+  }
+
+  .game-card a:hover{
+    background: linear-gradient(135deg,#00bfff,#00ffd8);
+    box-shadow:0 10px 25px rgba(0,255,216,0.6);
+  }
+
+  footer{
+    text-align:center;
+    padding:20px 0;
+    font-size:0.9rem;
+    color:#94b9d6;
+    background: linear-gradient(135deg,#0d0d2b,#1c1c3a);
+  }
+
+  @media(max-width:600px){
+    header h1{font-size:2rem;}
+    header p{font-size:1rem;}
+    .game-card h3{font-size:1.3rem;}
+  }
+</style>
 </head>
 <body>
-  <header>
-    <h1>ZynPlay Arcade 🎮</h1>
-    <p>Play simple, fun & original web games by Farzeen.</p>
-  </header>
+<header>
+  <h1>ZynPlay Arcade 🎮</h1>
+  <p>Play fun, addictive, original web games by Farzeen. Click a game below to start!</p>
+</header>
 
-  <section class="games">
-    <div class="game-card">
-      <h3>🚗 Road Builder</h3>
-      <p>Build roads by tapping to keep your car moving!</p>
-      <a href="games/roadbuilder/index.html">Play</a>
-    </div>
+<main>
+  <div class="game-card">
+    <h3>🚗 Road Builder</h3>
+    <p>Build the road by tapping to keep your car moving. Can you go far?</p>
+    <a href="games/roadbuilder/index.html">Play Now</a>
+  </div>
 
-    <div class="game-card">
-      <h3>🏸 Floating Bat</h3>
-      <p>Move the bat & return the shuttle endlessly.</p>
-      <a href="games/tennis/index.html">Play</a>
-    </div>
-  </section>
+  <div class="game-card">
+    <h3>🏸 Floating Bat</h3>
+    <p>Move the bat & return the shuttle endlessly. Perfect reflexes needed!</p>
+    <a href="games/tennis/index.html">Play Now</a>
+  </div>
+
+  <div class="game-card">
+    <h3>💥 Spike Smash</h3>
+    <p>Destroy the big ball before it reaches your base! Click to spawn spikes.</p>
+    <a href="games/jumpdash/index.html">Play Now</a>
+  </div>
+</main>
+
+<footer>
+  © 2025 ZynPlay • Click/Tap to play • Created by Farzeen
+</footer>
 </body>
 </html>
