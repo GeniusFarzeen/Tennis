@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ZynPlay — Spike Smash (JumpDash Boss)</title>
+<style>
+  :root{
+    --bg1:#0f1724;
+    --bg2:#06203a;
+    --ui:#e6f6ff;
+    --accent:#ffb86b;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Arial;}
+  body{background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ui);display:flex;align-items:center;justify-content:center;padding:20px;}
+  #wrap{width:100%;max-width:1000px;height:640px;background:linear-gradient(180deg,#071324 0%, #08263a 100%);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.6);position:relative;overflow:hidden}
+  canvas{display:block;width:100%;height:100%}
+  #hud{position:absolute;left:14px;top:12px;display:flex;gap:12px;align-items:center}
+  #level {font-weight:700;color:var(--accent)}
+  #score {background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:8px}
+  #controls{position:absolute;right:14px;top:12px;display:flex;gap:10px;align-items:center}
+  select, button{background:rgba(255,255,255,0.05);color:var(--ui);border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;cursor:pointer}
+  #msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;display:none;z-index:10}
+  #msg h2{margin:0 0 10px 0;font-size:26px;color:var(--accent)}
+  #msg p{margin:0 0 14px 0;color:#d6eefc}
+  .btn-primary{background:var(--accent);color:#081321;border:none;padding:10px 16px;border-radius:10px;font-weight:700}
+  footer{position:absolute;left:14px;bottom:12px;color:#94b9d6;font-size:13px}
+  /* tiny mobile fixes */
+  @media(max-width:600px){
+    #wrap{height:520px}
+    #msg h2{font-size:20px}
+  }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="c"></canvas>
+
+    <div id="hud">
+      <div id="level">Level: 1</div>
+      <div id="score">Score: 0</div>
+    </div>
+
+    <div id="controls">
+      <label style="font-size:13px;color:#cfeefc">Difficulty</label>
+      <select id="difficulty">
+        <option value="easy">Easy</option>
+        <option value="normal" selected>Normal</option>
+        <option value="hard">Hard</option>
+      </select>
+      <button id="restart" title="Restart">Restart</button>
+    </div>
+
+    <div id="msg">
+      <h2 id="msgTitle">You Win</h2>
+      <p id="msgDesc">Nice! Beat this level to continue.</p>
+      <div style="display:flex;gap:10px;justify-content:center">
+        <button id="nextBtn" class="btn-primary">Next Level</button>
+        <button id="retryBtn">Play Again</button>
+      </div>
+    </div>
+
+    <footer>Click / Tap to spawn spikes • Prevent the ball from reaching your base</footer>
+  </div>
+
+<script>
+/*
+  Spike Smash — single-file game
+  - Click/tap to spawn spikes that home toward the big ball
+  - Big ball has HP each level; destroy it before it reaches the base (left side)
+  - Difficulty changes spike damage, cooldown, ball speed
+  - Levels increase ball HP and speed
+*/
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+const wrap = document.getElementById('wrap');
+const levelEl = document.getElementById('level');
+const scoreEl = document.getElementById('score');
+const difficultySel = document.getElementById('difficulty');
+const restartBtn = document.getElementById('restart');
+const msg = document.getElementById('msg');
+const msgTitle = document.getElementById('msgTitle');
+const msgDesc = document.getElementById('msgDesc');
+const nextBtn = document.getElementById('nextBtn');
+const retryBtn = document.getElementById('retryBtn');
+
+function resize(){
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Game variables
+let state = {
+  level: 1,
+  score: 0,
+  difficulty: 'normal'
+};
+
+let ball = null;   // boss ball
+let spikes = [];   // player spikes
+let baseX = 100;   // x position of player's base (left safe zone)
+let lastSpawn = 0;
+let spawnCooldown = 400; // ms default
+let lastTime = performance.now();
+let running = true;
+let animId = null;
+
+// difficulty params
+const DIFF = {
+  easy:   { spikeDamage: 30, cooldown: 300, ballSpeedMul: 0.8, spikeSpeed: 6 },
+  normal: { spikeDamage: 20, cooldown: 240, ballSpeedMul: 1.0, spikeSpeed: 7 },
+  hard:   { spikeDamage: 12, cooldown: 180, ballSpeedMul: 1.25, spikeSpeed: 9 }
+};
+
+// helper utilities
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function clamp(a,mn,mx){ return Math.max(mn, Math.min(mx, a)); }
+function dist(x1,y1,x2,y2){ return Math.hypot(x2-x1, y2-y1); }
+
+// init new level
+function startLevel(lv=1){
+  state.level = lv;
+  levelEl.innerText = 'Level: ' + lv;
+  // base ball HP scales: base 100 + 30*level, modified by difficulty
+  const baseHP = 100 + (lv-1)*35;
+  ball = {
+    x: canvas.width - 120,
+    y: canvas.height*0.5,
+    r: 60 + Math.min(40, (lv-1)*6),
+    hp: baseHP,
+    maxHp: baseHP,
+    vx: -1.0 * DIFF[state.difficulty].ballSpeedMul - (lv-1)*0.08 // moves left toward your base
+  };
+  spikes = [];
+  lastSpawn = 0;
+  running = true;
+  showMsg(false);
+}
+
+// spawn a spike at player's base toward a target y (click y)
+function spawnSpike(targetY){
+  const now = performance.now();
+  if(now - lastSpawn < DIFF[state.difficulty].cooldown) return;
+  lastSpawn = now;
+  const spike = {
+    x: baseX,
+    y: clamp(targetY, 40, canvas.height-40),
+    vx: 0,
+    vy: 0,
+    speed: DIFF[state.difficulty].spikeSpeed,
+    damage: DIFF[state.difficulty].spikeDamage,
+    life: 5000 // ms
+  };
+  // initial direction toward ball
+  const angle = Math.atan2(ball.y - spike.y, ball.x - spike.x);
+  spike.vx = Math.cos(angle)*spike.speed;
+  spike.vy = Math.sin(angle)*spike.speed;
+  spike.spawnTime = now;
+  spikes.push(spike);
+}
+
+// handle clicks / taps anywhere on canvas
+function pointerHandler(e){
+  let rect = canvas.getBoundingClientRect();
+  let clientY = (e.touches ? e.touches[0].clientY : e.clientY);
+  let y = clientY - rect.top;
+  spawnSpike(y);
+}
+canvas.addEventListener('mousedown', pointerHandler);
+canvas.addEventListener('touchstart', pointerHandler, {passive:true});
+
+// update loop
+function update(dt){
+  if(!running) return;
+
+  // move ball left
+  ball.x += ball.vx * dt/16;
+  // ball slightly bob up/down for style
+  ball.y += Math.sin(performance.now()/250) * 0.15;
+
+  // update spikes (they home a bit toward ball)
+  for(let s of spikes){
+    const angle = Math.atan2(ball.y - s.y, ball.x - s.x);
+    // small homing tweak so spikes curve
+    s.vx += (Math.cos(angle)*s.speed - s.vx) * 0.12;
+    s.vy += (Math.sin(angle)*s.speed - s.vy) * 0.12;
+    s.x += s.vx * dt/16;
+    s.y += s.vy * dt/16;
+    s.life -= dt;
+  }
+  // collision: spike vs ball
+  for(let i = spikes.length - 1; i >= 0; i--){
+    const s = spikes[i];
+    const d = dist(s.x, s.y, ball.x, ball.y);
+    if(d < ball.r + 6){
+      // hit
+      ball.hp -= s.damage;
+      state.score += Math.max(1, Math.round(s.damage/5));
+      // create small explosion visual (pop)
+      spawnHitEffect(s.x, s.y);
+      spikes.splice(i,1);
+    } else if(s.life <= 0 || s.x > canvas.width + 100 || s.x < -100 || s.y < -100 || s.y > canvas.height + 100){
+      spikes.splice(i,1);
+    }
+  }
+
+  // if ball reaches base -> fail
+  if(ball.x - ball.r <= baseX + 8){
+    // fail
+    running = false;
+    showMsg(true, false); // lost
+  }
+
+  // if ball HP <= 0 -> win level
+  if(ball.hp <= 0){
+    running = false;
+    state.score += 50 + state.level*10;
+    showMsg(true, true); // win
+  }
+}
+
+// simple particle for hit effect
+let hits = [];
+function spawnHitEffect(x,y){
+  for(let i=0;i<8;i++){
+    hits.push({
+      x, y,
+      vx: rand(-1.8,1.8),
+      vy: rand(-1.8,1.8),
+      life: 420 + Math.random()*200
+    });
+  }
+}
+function updateHits(dt){
+  for(let i = hits.length -1; i>=0; i--){
+    hits[i].x += hits[i].vx * dt/16;
+    hits[i].y += hits[i].vy * dt/16;
+    hits[i].life -= dt;
+    if(hits[i].life <= 0) hits.splice(i,1);
+  }
+}
+
+// draw everything
+function draw(){
+  // background
+  const g = ctx.createLinearGradient(0,0,0,canvas.height);
+  g.addColorStop(0, '#081425');
+  g.addColorStop(1, '#04273a');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // base zone (left)
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  ctx.fillRect(0,0,baseX,canvas.height);
+  ctx.fillStyle = '#08304a';
+  ctx.fillRect(0,canvas.height - 80, canvas.width, 80);
+
+  // draw spikes
+  for(const s of spikes){
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    const ang = Math.atan2(s.vy, s.vx);
+    ctx.rotate(ang);
+    // spike triangle
+    ctx.fillStyle = '#ffd9b3';
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(-14,-6);
+    ctx.lineTo(-14,6);
+    ctx.closePath();
+    ctx.fill();
+    // shaft
+    ctx.fillStyle = '#d49a6a';
+    ctx.fillRect(-14, -2, -12, 4);
+    ctx.restore();
+  }
+
+  // draw hits
+  for(const p of hits){
+    ctx.fillStyle = 'rgba(255,230,170,0.95)';
+    ctx.fillRect(p.x-2, p.y-2, 4,4);
+  }
+
+  // draw big ball (boss)
+  // ball body
+  const hpRatio = clamp(ball.hp/ball.maxHp, 0, 1);
+  ctx.beginPath();
+  ctx.fillStyle = '#ff9a9a';
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // ball inner shading
+  const grad = ctx.createRadialGradient(ball.x - ball.r*0.3, ball.y - ball.r*0.4, ball.r*0.1, ball.x, ball.y, ball.r);
+  grad.addColorStop(0, 'rgba(255,255,255,0.6)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.1)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+  ctx.fill();
+
+  // health bar above ball
+  const barW = Math.min(220, ball.r*2.4);
+  const barH = 12;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(ball.x - barW/2, ball.y - ball.r - 28, barW, barH);
+  // HP color: green -> yellow -> red
+  const hpColor = hpRatio > 0.6 ? '#6de06d' : (hpRatio > 0.3 ? '#ffd36b' : '#ff6b6b');
+  ctx.fillStyle = hpColor;
+  ctx.fillRect(ball.x - barW/2 + 2, ball.y - ball.r - 26, (barW-4) * hpRatio, barH-4);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.strokeRect(ball.x - barW/2, ball.y - ball.r - 28, barW, barH);
+
+  // show HP text
+  ctx.fillStyle = '#042a35';
+  ctx.font = 'bold 14px Inter';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.max(0, Math.round(ball.hp)) + ' HP', ball.x, ball.y - ball.r - 34);
+
+  // HUD score & level (also updated by DOM)
+}
+
+// main loop
+function loop(now){
+  animId = requestAnimationFrame(loop);
+  const dt = Math.min(40, now - lastTime);
+  lastTime = now;
+  if(running){
+    update(dt);
+    updateHits(dt);
+  }
+  draw();
+}
+
+// show/hide message overlay
+function showMsg(show, won){
+  if(!show){
+    msg.style.display = 'none';
+    return;
+  }
+  msg.style.display = 'block';
+  if(won){
+    msgTitle.innerText = 'Level Clear!';
+    msgDesc.innerText = `You destroyed the ball! Score: ${state.score}`;
+    nextBtn.style.display = 'inline-block';
+    retryBtn.innerText = 'Replay';
+  } else {
+    msgTitle.innerText = 'You Lost';
+    msgDesc.innerText = `The ball reached your base. Score: ${state.score}`;
+    nextBtn.style.display = 'none';
+    retryBtn.innerText = 'Try Again';
+  }
+}
+
+// restart handlers
+restartBtn.addEventListener('click', ()=>{
+  state.level = 1;
+  state.score = 0;
+  startLevel(1);
+  scoreEl.innerText = 'Score: ' + state.score;
+  lastTime = performance.now();
+  if(!running) { running = true; requestAnimationFrame(loop); }
+});
+
+nextBtn.addEventListener('click', ()=>{
+  startLevel(state.level + 1);
+  scoreEl.innerText = 'Score: ' + state.score;
+  lastTime = performance.now();
+  if(!running) { running = true; requestAnimationFrame(loop); }
+});
+
+retryBtn.addEventListener('click', ()=>{
+  state.score = 0;
+  startLevel(1);
+  scoreEl.innerText = 'Score: ' + state.score;
+  lastTime = performance.now();
+  if(!running) { running = true; requestAnimationFrame(loop); }
+});
+
+// difficulty change
+difficultySel.addEventListener('change', ()=>{
+  state.difficulty = difficultySel.value;
+  // apply new difficulty by restarting current level so params take effect
+  startLevel(state.level);
+});
+
+// simple score updater (the DOM value)
+function tickScore(){
+  scoreEl.innerText = 'Score: ' + state.score;
+  requestAnimationFrame(tickScore);
+}
+
+// initial start
+state.difficulty = difficultySel.value;
+startLevel(1);
+lastTime = performance.now();
+requestAnimationFrame(loop);
+requestAnimationFrame(tickScore);
+
+</script>
+</body>
+</html>
