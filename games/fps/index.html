@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ZynPlay — FPS Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Orbitron',sans-serif;background:#071426;color:#e6fbff;height:100vh;overflow:hidden}
+  #wrap{position:relative;width:100%;height:100vh;display:block}
+  canvas{display:block;width:100%;height:100%}
+  /* overlay UI */
+  #overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(5,8,15,0.55),rgba(5,8,15,0.7));z-index:60}
+  .card{width:380px;background:linear-gradient(180deg,#07283a,#06324a);padding:20px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 14px 40px rgba(0,0,0,0.6)}
+  .card h2{color:#7ef0d6;margin-bottom:10px}
+  .input{width:100%;padding:10px;border-radius:8px;border:none;margin:8px 0;background:rgba(255,255,255,0.03);color:#e6fbff}
+  .btn{width:100%;padding:10px;border-radius:8px;border:none;background:linear-gradient(90deg,#00ffd8,#00a6ff);color:#03121a;font-weight:800;cursor:pointer;margin-top:10px}
+  .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:#e6fbff}
+  .row{display:flex;gap:8px}
+  .small{font-size:13px;color:#bfefff;opacity:0.9;margin-top:8px}
+  /* HUD */
+  #hud{position:absolute;left:12px;top:12px;z-index:50;color:#cfeefc;font-size:14px;background:rgba(0,0,0,0.2);padding:8px;border-radius:8px}
+  #rightHud{position:absolute;right:12px;top:12px;z-index:50;color:#cfeefc;font-size:14px;background:rgba(0,0,0,0.18);padding:8px;border-radius:8px}
+  #bottomHud{position:absolute;left:12px;bottom:12px;z-index:50;color:#cfeefc;font-size:13px;background:rgba(0,0,0,0.18);padding:6px 10px;border-radius:8px}
+  #msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;padding:16px 20px;border-radius:10px;background:rgba(5,8,12,0.9);display:none}
+  .gun-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .gun-btn{padding:6px 10px;border-radius:8px;border:none;cursor:pointer;background:rgba(255,255,255,0.03);color:#e6fbff}
+  .team-btn{padding:6px 10px;border-radius:8px;border:none;cursor:pointer;margin-left:6px}
+  .team-blue{background:#6bd7ff;color:#02141a}
+  .team-red{background:#ff6b6b;color:#1b0d0d}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+
+  <!-- Login / Signup overlay -->
+  <div id="overlay">
+    <div class="card" id="authCard">
+      <h2>ZynPlay FPS — Login / Sign Up</h2>
+
+      <div id="tabs" style="display:flex;gap:8px;margin-bottom:10px">
+        <button id="tabLogin" class="btn ghost" style="flex:1">Login</button>
+        <button id="tabSign" class="btn ghost" style="flex:1">Sign Up</button>
+      </div>
+
+      <div id="loginBox">
+        <input id="liUser" class="input" placeholder="Username" />
+        <input id="liPass" class="input" placeholder="Password" type="password" />
+        <button id="doLogin" class="btn">Login</button>
+        <button id="doGuest" class="btn ghost">Play as Guest</button>
+        <div class="small">Tip: Test OP: Username <strong>Zynth</strong> Password <strong>GamerZynth</strong></div>
+      </div>
+
+      <div id="signBox" style="display:none">
+        <input id="suUser" class="input" placeholder="Choose a username" />
+        <input id="suPass" class="input" placeholder="Choose a password" type="password" />
+        <div style="margin-top:8px">Pick a starting gun:</div>
+        <div class="gun-list" id="signGuns"></div>
+        <button id="doSign" class="btn">Create Account</button>
+        <div class="small">Usernames must be unique. Accounts saved locally (demo).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">User: <span id="hudUser">Guest</span> • Team: <span id="hudTeam">None</span></div>
+  <div id="rightHud">
+    HP: <span id="hudHp">100</span><br>
+    Gun: <span id="hudGun">None</span>
+    <div style="margin-top:6px" id="gunButtons"></div>
+  </div>
+  <div id="bottomHud">Use WASD to move • Click to shoot • Press 1-4 to switch guns</div>
+
+  <div id="msg"></div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+/* ---------- Accounts (localStorage) ---------- */
+const USERS_KEY = 'zynplay_fps_users_v1';
+let users = JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
+
+// Pre-create Zynth OP account
+if(!users['Zynth']){
+  users['Zynth'] = {
+    password: 'GamerZynth',
+    team: 'Blue',
+    gunId: 'sniper_op',
+    inventory: ['sniper_op','shotgun','smg','pistol']
+  };
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+// UI Elements
+const overlay = document.getElementById('overlay');
+const tabLogin = document.getElementById('tabLogin');
+const tabSign = document.getElementById('tabSign');
+const loginBox = document.getElementById('loginBox');
+const signBox = document.getElementById('signBox');
+const liUser = document.getElementById('liUser');
+const liPass = document.getElementById('liPass');
+const doLogin = document.getElementById('doLogin');
+const doGuest = document.getElementById('doGuest');
+const suUser = document.getElementById('suUser');
+const suPass = document.getElementById('suPass');
+const doSign = document.getElementById('doSign');
+const signGuns = document.getElementById('signGuns');
+const hudUser = document.getElementById('hudUser');
+const hudTeam = document.getElementById('hudTeam');
+const hudHp = document.getElementById('hudHp');
+const hudGun = document.getElementById('hudGun');
+const msgBox = document.getElementById('msg');
+const gunButtons = document.getElementById('gunButtons');
+
+tabLogin.onclick = ()=>{ loginBox.style.display='block'; signBox.style.display='none'; }
+tabSign.onclick = ()=>{ loginBox.style.display='none'; signBox.style.display='block'; }
+
+// Gun catalog
+const GUNS = {
+  pistol: { id:'pistol', name:'Pistol', dmg:18, rpm:300, speed:22, burst:1, color:'#f5f5f5' },
+  smg: { id:'smg', name:'SMG', dmg:10, rpm:700, speed:28, burst:1, color:'#b3ffef' },
+  shotgun: { id:'shotgun', name:'Shotgun', dmg:26, rpm:380, speed:20, burst:6, spread:0.35, color:'#ffd9b3' },
+  sniper: { id:'sniper', name:'Sniper', dmg:70, rpm:60, speed:42, burst:1, color:'#b3d1ff' },
+  sniper_op: { id:'sniper_op', name:'Sniper-X', dmg:140, rpm:120, speed:60, burst:1, color:'#ffd36b' }
+};
+
+// fill sign-up gun options
+Object.values(GUNS).forEach(g=>{
+  const b = document.createElement('button');
+  b.className = 'gun-btn';
+  b.innerText = g.name;
+  b.style.border = `1px solid ${g.color}`;
+  b.onclick = ()=> {
+    [...signGuns.children].forEach(c=>c.style.opacity=0.45);
+    b.style.opacity = 1; b.dataset.g = g.id;
+  };
+  signGuns.appendChild(b);
+});
+// preselect first
+if(signGuns.firstChild) signGuns.firstChild.click();
+
+// Signup handler
+doSign.onclick = ()=>{
+  const u = suUser.value.trim();
+  const p = suPass.value;
+  const pick = [...signGuns.children].find(c=>c.dataset.g)?.dataset.g || 'pistol';
+  if(!u||!p){ alert('Enter username + password'); return; }
+  if(users[u]){ alert('Username taken'); return; }
+  users[u] = { password:p, team:'Red', gunId:pick, inventory:[pick,'pistol'] };
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+  alert('Account created! Login now.');
+  tabLogin.click(); liUser.value = u; liPass.value = p;
+};
+
+// Login handler
+let CURRENT = null;
+doLogin.onclick = ()=> {
+  const u = liUser.value.trim(), p = liPass.value;
+  if(!u||!p){ alert('Enter credentials'); return; }
+  if(!users[u] || users[u].password !== p){ alert('Wrong username or pass'); return; }
+  CURRENT = { username:u, ...users[u] };
+  startGame();
+};
+doGuest.onclick = ()=> {
+  CURRENT = { username:'Guest', team:'Red', gunId:'pistol', inventory:['pistol'] };
+  startGame();
+};
+
+/* ---------- Three.js FPS Core ---------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x071426);
+
+// camera & controls
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0,1.7,5);
+const controls = new THREE.PointerLockControls(camera, renderer.domElement);
+
+// lighting
+const hemi = new THREE.HemisphereLight(0xffffff, 0x080820, 0.6); scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(10,20,10); scene.add(dir);
+
+// floor
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshPhongMaterial({color:0x082733}));
+ground.rotation.x = -Math.PI/2; ground.position.y = 0; scene.add(ground);
+
+// walls / cover blocks
+const covers = [];
+for(let i=0;i<6;i++){
+  const box = new THREE.Mesh(new THREE.BoxGeometry(6,2,3), new THREE.MeshStandardMaterial({color:0x062b3b}));
+  box.position.set(Math.random()*60-30,1, -20 - i*10);
+  scene.add(box); covers.push(box);
+}
+
+// NPC container
+let NPCS = [];
+function spawnNPC(){
+  const geo = new THREE.BoxGeometry(0.8,1.6,0.8);
+  const mat = new THREE.MeshStandardMaterial({color:0xff6b6b});
+  const npc = new THREE.Mesh(geo, mat);
+  npc.position.set(Math.random()*80-40,0.8, -60 - Math.random()*50);
+  npc.hp = 100;
+  scene.add(npc); NPCS.push(npc);
+}
+for(let i=0;i<7;i++) spawnNPC();
+
+// player state
+let player = { x:0, y:1.7, z:0, speed:6, hp:100, gun: null, lastShot:0 };
+
+// bullets (ray-based)
+const bullets = [];
+
+// resize
+function onResize(){ renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); }
+window.addEventListener('resize', onResize);
+onResize();
+
+// mouse & movement
+const keys = {}; window.addEventListener('keydown', e=>keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e=>keys[e.key.toLowerCase()] = false);
+
+let pointerLocked = false;
+renderer.domElement.addEventListener('click', ()=> {
+  if(!pointerLocked) controls.lock();
+});
+controls.addEventListener('lock', ()=> { pointerLocked = true; });
+controls.addEventListener('unlock', ()=> { pointerLocked = false; });
+
+// equip user gun
+function equipGun(id){
+  player.gun = GUNS[id] || GUNS['pistol'];
+  hudGun.innerText = player.gun.name;
+  hudHp.innerText = player.hp;
+  // populate quick-switch buttons
+  gunButtons.innerHTML = '';
+  const inv = (CURRENT && CURRENT.inventory) ? CURRENT.inventory : [player.gun.id];
+  inv.forEach(gid=>{
+    const b = document.createElement('button'); b.className='gun-btn'; b.innerText = GUNS[gid].name; b.onclick = ()=> {
+      equipGun(gid);
+      if(CURRENT) { CURRENT.gunId = gid; users[CURRENT.username].gunId = gid; localStorage.setItem(USERS_KEY, JSON.stringify(users)); }
+    };
+    gunButtons.appendChild(b);
+  });
+}
+
+// shooting: raycast from camera center
+function shoot(){
+  if(!player.gun) return;
+  const now = performance.now();
+  const msPerShot = 60000/player.gun.rpm;
+  if(now - player.lastShot < msPerShot) return;
+  player.lastShot = now;
+
+  // burst logic (shotgun multiple rays)
+  if(player.gun.burst && player.gun.burst > 1){
+    for(let i=0;i<player.gun.burst;i++){
+      const spread = (Math.random()-0.5)*(player.gun.spread||0.25);
+      const dir = getShotDirection(spread);
+      rayDamage(dir);
+    }
+  } else {
+    const dir = getShotDirection(0);
+    rayDamage(dir);
+  }
+}
+
+// compute ray direction vector with small spread
+function getShotDirection(spread){
+  const v = new THREE.Vector3(0,0,-1);
+  v.applyQuaternion(camera.quaternion);
+  if(spread){
+    // perturb direction
+    v.x += (Math.random()-0.5)*spread; v.y += (Math.random()-0.5)*spread;
+    v.normalize();
+  }
+  return v;
+}
+
+// apply damage along ray
+function rayDamage(dir){
+  const ray = new THREE.Raycaster(camera.position, dir);
+  const hits = ray.intersectObjects(NPCS, false);
+  if(hits.length){
+    const target = hits[0].object;
+    target.hp -= player.gun.dmg;
+    // tiny hit flash
+    const orig = target.material.color.getHex();
+    target.material.color.set(0xffffff);
+    setTimeout(()=> target.material.color.set(orig),80);
+    if(target.hp <= 0){
+      // award points & respawn
+      scene.remove(target);
+      NPCS.splice(NPCS.indexOf(target),1);
+      setTimeout(()=>spawnNPC(),700);
+    }
+  }
+}
+
+// movement + simple collision with ground bounds
+function updatePlayer(dt){
+  const dir = new THREE.Vector3();
+  if(keys['w']||keys['arrowup']) dir.z -= 1;
+  if(keys['s']||keys['arrowdown']) dir.z += 1;
+  if(keys['a']||keys['arrowleft']) dir.x -= 1;
+  if(keys['d']||keys['arrowright']) dir.x += 1;
+  dir.normalize();
+  // move in camera relative axes
+  const angle = camera.rotation.y;
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  forward.y = 0; forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+  camera.position.add(forward.clone().multiplyScalar(dir.z * player.speed * dt));
+  camera.position.add(right.clone().multiplyScalar(dir.x * player.speed * dt));
+}
+
+// UI & overlay controls
+function startGameAfterLogin(){
+  overlay.style.display = 'none';
+  hudUser.innerText = CURRENT.username;
+  hudTeam.innerText = CURRENT.team || 'Red';
+  hudHp.innerText = player.hp;
+  equipGun(CURRENT.gunId || 'pistol');
+}
+
+// login flow handled earlier: doLogin / doSign / doGuest set CURRENT and call startGameAfterLogin()
+
+// attach shooting to mouse
+window.addEventListener('mousedown', (e)=>{
+  if(pointerLocked) shoot();
+});
+// keyboard quick switch guns 1-5
+window.addEventListener('keydown', e=>{
+  if(['1','2','3','4','5'].includes(e.key)){
+    const inv = (CURRENT && CURRENT.inventory) ? CURRENT.inventory : ['pistol'];
+    const idx = parseInt(e.key)-1;
+    if(inv[idx]) equipGun(inv[idx]);
+  }
+});
+
+// simple NPC AI: move forward slowly toward center
+function updateNPCs(dt){
+  NPCS.forEach(n=>{
+    // move toward origin area
+    const v = new THREE.Vector3(0,0,0).sub(n.position).normalize();
+    n.position.addScaledVector(v, dt*0.6);
+  });
+}
+
+// render loop
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(50, now - last) / 1000; last = now;
+  updatePlayer(dt);
+  updateNPCs(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+// start after CURRENT set
+function startLoop(){
+  // position camera at spawn
+  camera.position.set(0,1.7,8);
+  controls.getObject().position.copy(camera.position);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- Wiring: when CURRENT is set (after login) ---------- */
+function startGame(){
+  // load CURRENT from users or guest
+  if(!CURRENT){ alert('No user'); return; }
+  // ensure CURRENT inventory
+  if(!CURRENT.inventory) CURRENT.inventory = [CURRENT.gunId || 'pistol'];
+  // set HUD & equip
+  hudUser.innerText = CURRENT.username;
+  hudTeam.innerText = CURRENT.team || 'Red';
+  hudHp.innerText = player.hp = 100;
+  // build quick gun list UI
+  gunButtons.innerHTML = '';
+  CURRENT.inventory.forEach(gid=>{
+    const b = document.createElement('button'); b.className='gun-btn'; b.innerText = GUNS[gid].name;
+    b.onclick = ()=> { equipGun(gid); CURRENT.gunId = gid; users[CURRENT.username].gunId = gid; localStorage.setItem(USERS_KEY, JSON.stringify(users)); };
+    gunButtons.appendChild(b);
+  });
+  equipGun(CURRENT.gunId || CURRENT.inventory[0] || 'pistol');
+  overlay.style.display = 'none';
+  // pointer lock instructions: click to lock
+  renderer.domElement.style.cursor = 'crosshair';
+  startLoop();
+}
+
+// logout support (quick)
+window.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ overlay.style.display='flex'; } });
+
+// quick bindings for login overlay (wired earlier)
+document.getElementById('doLogin').onclick = ()=> doLogin.click();
+document.getElementById('doSign').onclick = ()=> doSign.click();
+document.getElementById('doGuest').onclick = ()=> doGuest.click();
+
+// expose simple login via code for Zynth quick test (autofill)
+liUser.value = 'Zynth'; liPass.value = 'GamerZynth';
+
+// END
+</script>
+</body>
+</html>
